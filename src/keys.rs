@@ -1,0 +1,199 @@
+use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use blst::min_pk::*;
+use rand::RngCore;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::Path;
+
+use crate::types::KeyPair;
+
+#[derive(Clone)]
+pub struct KeyManager {
+    #[allow(dead_code)]
+    secret_key: Option<SecretKey>,
+    public_key: Option<PublicKey>,
+}
+
+impl KeyManager {
+    pub fn new() -> Self {
+        Self {
+            secret_key: None,
+            public_key: None,
+        }
+    }
+
+    /// Generate a new BLS keypair
+    pub fn generate_keypair() -> Result<KeyPair> {
+        let mut rng = rand::thread_rng();
+        let mut ikm = [0u8; 32];
+        rng.fill_bytes(&mut ikm);
+
+        let secret_key = SecretKey::key_gen(&ikm, &[]).map_err(|e| anyhow!("Failed to generate secret key: {:?}", e))?;
+        let public_key = secret_key.sk_to_pk();
+
+        Ok(KeyPair {
+            secret_key: secret_key.to_bytes().to_vec(),
+            public_key: public_key.to_bytes().to_vec(),
+        })
+    }
+
+    /// Load keypair from secret key bytes
+    pub fn from_secret_key(secret_key_bytes: &[u8]) -> Result<Self> {
+        let secret_key = SecretKey::from_bytes(secret_key_bytes)
+            .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
+        let public_key = secret_key.sk_to_pk();
+
+        Ok(Self {
+            secret_key: Some(secret_key),
+            public_key: Some(public_key),
+        })
+    }
+
+    /// Load public key from bytes
+    pub fn from_public_key(public_key_bytes: &[u8]) -> Result<PublicKey> {
+        PublicKey::from_bytes(public_key_bytes)
+            .map_err(|e| anyhow!("Invalid public key: {:?}", e))
+    }
+
+    /// Get the public key bytes
+    pub fn get_public_key_bytes(&self) -> Result<Vec<u8>> {
+        self.public_key
+            .as_ref()
+            .map(|pk| pk.to_bytes().to_vec())
+            .ok_or_else(|| anyhow!("No public key loaded"))
+    }
+
+    /// Get the secret key bytes
+    #[allow(dead_code)]
+    pub fn get_secret_key_bytes(&self) -> Result<Vec<u8>> {
+        self.secret_key
+            .as_ref()
+            .map(|sk| sk.to_bytes().to_vec())
+            .ok_or_else(|| anyhow!("No secret key loaded"))
+    }
+
+    /// Save keypair to files
+    pub fn save_keypair_to_files(keypair: &KeyPair, base_path: &str, name: &str) -> Result<()> {
+        let secret_path = format!("{}/{}_secret.key", base_path, name);
+        let public_path = format!("{}/{}_public.key", base_path, name);
+
+        // Create directory if it doesn't exist
+        if let Some(parent) = Path::new(&secret_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Save as base64 encoded strings for easy handling
+        let secret_b64 = BASE64.encode(&keypair.secret_key);
+        let public_b64 = BASE64.encode(&keypair.public_key);
+
+        fs::write(&secret_path, secret_b64)?;
+        fs::write(&public_path, public_b64)?;
+
+        println!("Keypair saved:");
+        println!("  Secret key: {}", secret_path);
+        println!("  Public key: {}", public_path);
+
+        Ok(())
+    }
+
+    /// Load secret key from file
+    pub fn load_secret_key_from_file(path: &str) -> Result<Vec<u8>> {
+        let content = fs::read_to_string(path)?;
+        let content = content.trim();
+        BASE64.decode(content)
+            .map_err(|e| anyhow!("Failed to decode secret key from file: {}", e))
+    }
+
+    /// Load public key from file
+    pub fn load_public_key_from_file(path: &str) -> Result<Vec<u8>> {
+        let content = fs::read_to_string(path)?;
+        let content = content.trim();
+        BASE64.decode(content)
+            .map_err(|e| anyhow!("Failed to decode public key from file: {}", e))
+    }
+
+    /// Generate a key ID from public key (SHA256 hash)
+    pub fn generate_key_id(public_key: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(public_key);
+        hex::encode(hasher.finalize())[..16].to_string() // First 16 chars of hash
+    }
+
+    /// Derive a shared secret using BLS (for key encapsulation)
+    #[allow(dead_code)]
+    pub fn derive_shared_secret(&self, other_public_key: &[u8]) -> Result<Vec<u8>> {
+        let secret_key = self.secret_key.as_ref()
+            .ok_or_else(|| anyhow!("No secret key loaded"))?;
+        
+        let _other_pk = PublicKey::from_bytes(other_public_key)
+            .map_err(|e| anyhow!("Invalid other public key: {:?}", e))?;
+
+        // For BLS, we'll use a simpler approach: hash the secret key with the other public key
+        // This is a simplified key derivation - in a full implementation you'd use proper BLS operations
+        let mut hasher = Sha256::new();
+        hasher.update(&secret_key.to_bytes());
+        hasher.update(other_public_key);
+        hasher.update(b"BLS_SHARED_SECRET");
+        Ok(hasher.finalize().to_vec())
+    }
+}
+
+impl Default for KeyManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_generate_keypair() {
+        let keypair = KeyManager::generate_keypair().unwrap();
+        assert_eq!(keypair.secret_key.len(), 32);
+        assert_eq!(keypair.public_key.len(), 48);
+    }
+
+    #[test]
+    fn test_save_and_load_keypair() {
+        let keypair = KeyManager::generate_keypair().unwrap();
+        let temp_dir = tempdir().unwrap();
+        let base_path = temp_dir.path().to_str().unwrap();
+
+        // Save keypair
+        KeyManager::save_keypair_to_files(&keypair, base_path, "test").unwrap();
+
+        // Load keys back
+        let secret_path = format!("{}/test_secret.key", base_path);
+        let public_path = format!("{}/test_public.key", base_path);
+
+        let loaded_secret = KeyManager::load_secret_key_from_file(&secret_path).unwrap();
+        let loaded_public = KeyManager::load_public_key_from_file(&public_path).unwrap();
+
+        assert_eq!(keypair.secret_key, loaded_secret);
+        assert_eq!(keypair.public_key, loaded_public);
+    }
+
+    #[test]
+    fn test_key_manager_from_secret_key() {
+        let keypair = KeyManager::generate_keypair().unwrap();
+        let key_manager = KeyManager::from_secret_key(&keypair.secret_key).unwrap();
+        
+        let public_key_bytes = key_manager.get_public_key_bytes().unwrap();
+        assert_eq!(keypair.public_key, public_key_bytes);
+    }
+
+    #[test]
+    fn test_key_id_generation() {
+        let keypair = KeyManager::generate_keypair().unwrap();
+        let key_id = KeyManager::generate_key_id(&keypair.public_key);
+        assert_eq!(key_id.len(), 16);
+        
+        // Same key should generate same ID
+        let key_id2 = KeyManager::generate_key_id(&keypair.public_key);
+        assert_eq!(key_id, key_id2);
+    }
+}
