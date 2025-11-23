@@ -8,7 +8,7 @@ export async function loadBLSWasm() {
 
   // Try multiple paths for WASM files
   const wasmPaths = [
-    '/wasm/bls-encryption.js',  // Original path in public/wasm/
+    '/lib/bls-encryption.js',   // Path in public/lib/ directory (Next.js serves from public)
     './bls-encryption.js'       // Direct path in lib/ directory
   ];
 
@@ -50,7 +50,7 @@ export async function loadBLSWasmFallback() {
   }
 
   // Try multiple paths for fallback loading
-  const wasmPaths = ['/wasm/bls-encryption.js', '/lib/bls-encryption.js'];
+  const wasmPaths = ['/lib/bls-encryption.js', './bls-encryption.js'];
 
   for (const path of wasmPaths) {
     try {

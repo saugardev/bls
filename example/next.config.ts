@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
       type: "webassembly/async",
     });
 
+    // Ensure WASM files are properly served
+    config.output.webassemblyModuleFilename = 'static/wasm/[modulehash].wasm';
+
     // Handle JS files from public directory
     config.module.rules.push({
       test: /bls-encryption\.js$/,
