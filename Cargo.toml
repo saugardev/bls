@@ -3,32 +3,52 @@ name = "bls-encryption-service"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 # Core
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Crypto
-blst = "0.3"
+# Crypto (WASM-compatible)
 aes-gcm = "0.10"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 base64 = "0.22"
 
-# CLI
-clap = { version = "4.5", features = ["derive"] }
+# CLI (disabled for WASM)
+clap = { version = "4.5", features = ["derive"], optional = true }
 
-# Service
-tokio = { version = "1.35", features = ["full"] }
-axum = "0.7"
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["cors"] }
+# Service (disabled for WASM)
+tokio = { version = "1.35", features = ["full"], optional = true }
+axum = { version = "0.7", optional = true }
+tower = { version = "0.4", features = ["util"], optional = true }
+tower-http = { version = "0.5", features = ["cors"], optional = true }
 
-# Performance
-rayon = "1.8"
-indicatif = "0.17"
+# Performance (not available in WASM)
+rayon = { version = "1.8", optional = true }
+indicatif = { version = "0.17", optional = true }
+
+# WASM
+wasm-bindgen = "0.2"
+console_error_panic_hook = { version = "0.1.7", optional = true }
+wee_alloc = { version = "0.4.5", optional = true }
+getrandom = { version = "0.2", features = ["js"] }
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "console",
+]
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[features]
+default = ["console_error_panic_hook", "cli", "service"]
+cli = ["dep:clap", "dep:rayon", "dep:indicatif"]
+service = ["dep:tokio", "dep:axum", "dep:tower", "dep:tower-http"]
+wasm = ["console_error_panic_hook", "wee_alloc"]

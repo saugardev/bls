@@ -1,0 +1,15 @@
+{
+  "name": "bls-encryption-service",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "bls-encryption_bg.wasm",
+    "bls-encryption.js",
+    "bls-encryption.d.ts"
+  ],
+  "main": "bls-encryption.js",
+  "types": "bls-encryption.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

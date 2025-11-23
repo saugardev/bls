@@ -4,15 +4,12 @@ use aes_gcm::{
 };
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-// BLS operations handled in KeyManager
 use rand::RngCore;
-// Parallel processing for future use
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 
 use crate::keys::KeyManager;
 use crate::types::EncryptedData;
-
 
 #[derive(Clone)]
 pub struct BLSEncryption {
@@ -34,7 +31,7 @@ impl BLSEncryption {
         }
     }
 
-    /// Encrypt data using hybrid BLS + AES encryption
+    /// Encrypt data using hybrid encryption (AES + simple key encapsulation)
     pub fn encrypt(&self, data: &[u8], public_key_bytes: &[u8]) -> Result<EncryptedData> {
         // Generate random AES key
         let mut aes_key = [0u8; 32];
@@ -49,7 +46,7 @@ impl BLSEncryption {
             .encrypt(&nonce, data)
             .map_err(|e| anyhow!("AES encryption failed: {}", e))?;
 
-        // Encrypt the AES key with BLS public key
+        // Encrypt the AES key with public key
         let encrypted_aes_key = self.encrypt_aes_key(&aes_key, public_key_bytes)?;
 
         // Compute hash of original data
@@ -69,9 +66,9 @@ impl BLSEncryption {
         })
     }
 
-    /// Decrypt data using hybrid BLS + AES decryption
+    /// Decrypt data using hybrid decryption
     pub fn decrypt(&self, encrypted_data: &EncryptedData, secret_key_bytes: &[u8]) -> Result<Vec<u8>> {
-        // Decrypt the AES key with BLS secret key
+        // Decrypt the AES key
         let aes_key = self.decrypt_aes_key(&encrypted_data.encrypted_aes_key, secret_key_bytes)?;
 
         // Decrypt the content with AES
@@ -135,17 +132,15 @@ impl BLSEncryption {
         Ok(())
     }
 
-    /// Encrypt AES key using BLS public key (simplified key encapsulation)
+    /// Encrypt AES key using simple key encapsulation
     fn encrypt_aes_key(&self, aes_key: &[u8; 32], public_key_bytes: &[u8]) -> Result<Vec<u8>> {
-        // For BLS, we'll use a simple approach: hash the public key to get an encryption key
-        // In a full implementation, you'd use proper BLS encryption or ECIES
-        
+        // Validate public key
         let _public_key = KeyManager::from_public_key(public_key_bytes)?;
         
         // Create a deterministic but secure encryption key from the public key
         let mut hasher = Sha256::new();
         hasher.update(public_key_bytes);
-        hasher.update(b"BLS_KEY_ENCAPSULATION");
+        hasher.update(b"KEY_ENCAPSULATION_SALT");
         let encryption_key = hasher.finalize();
 
         // Use AES to encrypt the AES key with the derived key
@@ -164,7 +159,7 @@ impl BLSEncryption {
         Ok(result)
     }
 
-    /// Decrypt AES key using BLS secret key
+    /// Decrypt AES key using simple key derivation
     fn decrypt_aes_key(&self, encrypted_aes_key: &[u8], secret_key_bytes: &[u8]) -> Result<Vec<u8>> {
         if encrypted_aes_key.len() < 12 {
             return Err(anyhow!("Encrypted AES key too short"));
@@ -180,7 +175,7 @@ impl BLSEncryption {
         
         let mut hasher = Sha256::new();
         hasher.update(&public_key_bytes);
-        hasher.update(b"BLS_KEY_ENCAPSULATION");
+        hasher.update(b"KEY_ENCAPSULATION_SALT");
         let encryption_key = hasher.finalize();
 
         // Decrypt the AES key
@@ -235,7 +230,7 @@ mod tests {
         let keypair = KeyManager::generate_keypair().unwrap();
         let encryption = BLSEncryption::new();
         
-        let data = b"Hello, BLS encryption!";
+        let data = b"Hello, encryption!";
         let encrypted = encryption.encrypt(data, &keypair.public_key).unwrap();
         let decrypted = encryption.decrypt(&encrypted, &keypair.secret_key).unwrap();
         

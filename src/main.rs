@@ -1,4 +1,5 @@
 use anyhow::Result;
+#[cfg(feature = "cli")]
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::File;
@@ -8,12 +9,14 @@ use std::time::Instant;
 
 mod encryption;
 mod keys;
+#[cfg(feature = "service")]
 mod service;
 mod types;
 
 use encryption::BLSEncryption;
 use keys::KeyManager;
 
+#[cfg(feature = "cli")]
 #[derive(Parser)]
 #[command(name = "bls-encryption-service")]
 #[command(about = "A BLS-based encryption/decryption service")]
@@ -23,6 +26,7 @@ struct Cli {
     command: Commands,
 }
 
+#[cfg(feature = "cli")]
 #[derive(Subcommand)]
 enum Commands {
     /// Generate a new BLS keypair
@@ -78,6 +82,7 @@ enum Commands {
     },
 }
 
+#[cfg(feature = "cli")]
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -104,12 +109,18 @@ async fn main() -> Result<()> {
         Commands::Benchmark { size_mb } => {
             benchmark_command(size_mb)?;
         }
+        #[cfg(feature = "service")]
         Commands::Service { port, secret_key } => {
             service::start_service(port, secret_key).await?;
         }
     }
 
     Ok(())
+}
+
+#[cfg(not(feature = "cli"))]
+fn main() {
+    // For WASM builds, main is not used
 }
 
 fn generate_keys_command(output_dir: &str, name: &str) -> Result<()> {
